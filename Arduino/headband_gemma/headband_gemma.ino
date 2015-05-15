@@ -3,25 +3,7 @@
  
 #define PIN1      0
 #define PIN2      1
-#define MIC_PIN A1
 #define N_LEDS 19 //per strip, 2 strips
-
-//#define CENTER_LED 16
-#define DC_OFFSET  0  // DC offset in mic signal - if unusure, leave 0
-#define NOISE     10  // Noise/hum/interference in mic signal
-#define SAMPLES   60  // Length of buffer for dynamic level adjustment
-#define TOP       (N_LEDS + 2) // Allow dot to go slightly off scale
-#define PEAK_FALL 40  // Rate of peak falling dot
-
-byte
-  peak      = 0,      // Used for falling dot
-  dotCount  = 0,      // Frame counter for delaying dot-falling speed
-  volCount  = 0;      // Frame counter for storing past volume data
-int
-  vol[SAMPLES],       // Collection of prior volume samples
-  lvl       = 10,      // Current "dampened" audio level
-  minLvlAvg = 0,      // For dynamic adjustment of graph low & high
-  maxLvlAvg = 512;
 
 Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(N_LEDS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(N_LEDS, PIN2, NEO_GRB + NEO_KHZ800);
@@ -40,8 +22,8 @@ static void setPixelsColors(int i, int j, uint32_t c1, uint32_t c2) {
 
 static void setOppositePixels(int i, uint32_t c1, uint32_t c2) {
   //sets opposite pixels of 2 different strips on headband
-    int j = (N_LEDS - i - 1);
-    setPixelsColors(i, j, c1, c2);
+  int j = (N_LEDS - i - 1);
+  setPixelsColors(i, j, c1, c2);
 }
 
 static void setAlltoColor(uint32_t c1) {
@@ -123,9 +105,7 @@ static void sparkle_v2() {
     //normal increment brightness algorithm and set led color for all
     for (int i=0;i<N_LEDS; i++) {
       //set Color, Brightness
-      setPixelsColors(i, i, Fade_Wheel(pin_color[i], pin_brightness[i]), Fade_Wheel(pin_color[i+N_LEDS], pin_brightness[i+N_LEDS]));
-      //
-      
+      setPixelsColors(i, i, Fade_Wheel(pin_color[i], pin_brightness[i]), Fade_Wheel(pin_color[i+N_LEDS], pin_brightness[i+N_LEDS]));     
       if (pin_brightness[i+N_LEDS]!=0) {
         pin_brightness[i+N_LEDS]=pin_brightness[i+N_LEDS]+26;
         if (pin_brightness[i+N_LEDS]>255) {//it has wrapped around, time to end fade
@@ -209,76 +189,11 @@ uint32_t Fade_Wheel(byte WheelPos, byte Brightness) {
   }
 }
 
-void audio_rainbow(byte count=1) {
-  uint8_t  i, counter=0;
-  uint16_t minLvl, maxLvl;
-  int      n, height;
-  while (count>0) {
-    counter++;
-    n   = analogRead(MIC_PIN);                        // Raw reading from mic 
-    n   = abs(n - 512 - DC_OFFSET); // Center on zero
-    n   = (n <= NOISE) ? 0 : (n - NOISE);             // Remove noise/hum
-    lvl = ((lvl * 7) + n) >> 3;    // "Dampened" reading (else looks twitchy)
-    // Calculate bar height based on dynamic min/max levels (fixed point):
-    height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
-   
-    if(height < 0L)       height = 0;      // Clip output
-    else if(height > TOP) height = TOP;
-    if(height > peak)     peak   = height; // Keep 'peak' dot at top
-   
-    // Color opposite pixels based on rainbow gradient
-    for(i=0; i<N_LEDS; i++) {
-      if(i >= height)               setOppositePixels(i,   0,   0);
-      else setOppositePixels(i, Wheel(map(i,0,strip1.numPixels()-1,30,150)), Wheel(map(i,0,strip1.numPixels()-1,30,150)));
-      //strip.setPixelColor(i,Wheel(map(i,0,strip.numPixels()-1,30,150)));
-    }
-   
-    // Draw peak dot  
-    if(peak > 0 && peak <= N_LEDS-1) setOppositePixels(peak,Wheel(map(peak,0,strip1.numPixels()-1,30,150)), Wheel(map(peak,0,strip1.numPixels()-1,30,150)));
-    
-    Show(); // Update strip
-    // Every few frames, make the peak pixel drop by 1:
-      if(++dotCount >= PEAK_FALL) { //fall rate 
-        if(peak > 0) peak--;
-        dotCount = 0;
-     }
-     vol[volCount] = n;                      // Save sample for dynamic leveling
-    if(++volCount >= SAMPLES) volCount = 0; // Advance/rollover sample counter
-    // Get volume range of prior frames
-    minLvl = maxLvl = vol[0];
-    for(i=1; i<SAMPLES; i++) {
-      if(vol[i] < minLvl)      minLvl = vol[i];
-      else if(vol[i] > maxLvl) maxLvl = vol[i];
-    }
-    // minLvl and maxLvl indicate the volume range over prior frames, used
-    // for vertically scaling the output graph (so it looks interesting
-    // regardless of volume level).  If they're too close together though
-    // (e.g. at very low volume levels) the graph becomes super coarse
-    // and 'jumpy'...so keep some minimum distance between them (this
-    // also lets the graph go to zero when no sound is playing):
-    
-    if((maxLvl - minLvl) < TOP) maxLvl = minLvl + TOP;
-    minLvlAvg = (minLvlAvg * 63 + minLvl) >> 6; // Dampen min/max levels
-    maxLvlAvg = (maxLvlAvg * 63 + maxLvl) >> 6; // (fake rolling average)
-    
-    if (counter==0)          count--;
-  }
-}
-//uint32_t magenta = strip.Color(255, 0, 255);
-//strip.setPixelColor(i  , color); // Draw new pixel
-//strip.setPixelColor(i, r, g, b); // Erase pixel a few steps back
-//strip.show();
-
-//uint32_t color = strip.getPixelColor(11);
-//uint16_t n = strip.numPixels();
-//strip.setBrightness(64); 0-255 sets maxbrightness
-
 void setup() {
   strip1.setBrightness(130);
   strip2.setBrightness(130);
   strip1.begin();
   strip2.begin();
-  memset(vol, 0, sizeof(vol));
 }
 
 void loop() {
