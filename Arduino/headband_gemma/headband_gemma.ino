@@ -3,10 +3,19 @@
  
 #define PIN1      0
 #define PIN2      1
+#define SWITCH    2
 #define N_LEDS 19 //per strip, 2 strips
 
 Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(N_LEDS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(N_LEDS, PIN2, NEO_GRB + NEO_KHZ800);
+
+const int debounceDelay = 7;
+
+byte CL1 = 0,
+     CL2 = 51,
+     CL3 = 102,
+     MODE = 0;
+
 
 static void Show(){
   //show both strips
@@ -60,16 +69,6 @@ static void step_off(int select=0) {
       delay(200);
     }
   }
-}
-
-static void sparkle_v1() {
-  for (int i=0;i<(N_LEDS/2);i++) {
-    //Wheel(map(i,0,N_LEDS-1,30,150))
-    setPixelsColors(random(N_LEDS), random(N_LEDS), Wheel(random(256)), Wheel(random(256)));
-  }
-  Show();
-  delay(125);
-  setAlltoColor(0);
 }
 
 static void sparkle_v2() {
@@ -189,7 +188,49 @@ uint32_t Fade_Wheel(byte WheelPos, byte Brightness) {
   }
 }
 
+static void chase(uint32_t c) {
+  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
+      setPixelsColors(i, i, c, c); // Draw new pixel
+      setPixelsColors(i-4, i-4, 0, 0); // Erase pixel a few steps back
+      Show();
+      delay(100);
+  }
+}
+
+
+static void opposite_chase(uint32_t c) {
+  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
+      setOppositePixels(i, c, c); // Draw new pixel
+      setOppositePixels(i-4, 0, 0); // Erase pixel a few steps back
+      Show();
+      delay(100);
+  }
+}
+
+boolean debounce(int pin){
+  boolean state;
+  boolean previousState;
+  previousState = digitalRead( pin );
+  for (int i=0; i < debounceDelay; i++) {
+    delay(1);
+    state = digitalRead( pin ) ;
+    if(state != previousState) {
+      i=0;
+      previousState = state;    
+    }
+  }
+  return state;
+}
+void reset() {
+  if ( debounce( SWITCH ) ) {
+    MODE++;
+  }
+}
+
 void setup() {
+  pinMode(SWITCH, INPUT);
+  digitalWrite(SWITCH, HIGH);
+  attachInterrupt(0, reset, FALLING);
   strip1.setBrightness(130);
   strip2.setBrightness(130);
   strip1.begin();
@@ -198,28 +239,15 @@ void setup() {
 
 void loop() {
   //chase(strip1.Color(255, 0, 0)); // Red
-  uint32_t C1 = Wheel(100);
-  uint32_t C2 = Wheel(200);
-  uint32_t C3 = Wheel(015);
+  uint32_t C1 = Wheel(CL1);
+  uint32_t C2 = Wheel(CL2);
+  uint32_t C3 = Wheel(CL3);
   
-  //setPixelsColors(0 ,0 , C1, C2);
-  //Show();
-  //delay(20000);
-  sparkle_v2();
-  //for (int i=0;i<20;i++) {
-  //  sparkle_v1();
-  //}
-  //setAlltoColor(C1);
-  //step_off(0);
-  //setAlltoColor(C2);
-  //step_off(1);
-  //rainbow_fill();
-  //step_off(2);
-  //setAlltoColor(C3);
-  //step_off(3);
-  //rainbow_fill(1);
-  delay(2000);
-  setAlltoColor(0);
-  //Serial.print("IN2 = ");
-  delay(2000);
+  if (MODE %3 == 0) {
+    chase( Wheel( CL1 ) );
+  } else if (MODE %3 == 1) {
+    opposite_chase( Wheel( CL1 ) );
+  } else {
+    sparkle_v2();
+  }
 }
