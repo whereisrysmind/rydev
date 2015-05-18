@@ -9,13 +9,11 @@
 Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(N_LEDS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(N_LEDS, PIN2, NEO_GRB + NEO_KHZ800);
 
-const int debounceDelay = 7;
+const int debounceDelay = 20;
 
-byte CL1 = 0,
-     CL2 = 51,
-     CL3 = 102,
-     MODE = 0;
+byte MODE = 0;
 
+//These functions are headband specific and handle the dual led strips
 
 static void Show(){
   //show both strips
@@ -41,6 +39,9 @@ static void setAlltoColor(uint32_t c1) {
   }
   Show();
 }
+
+
+//these functions perform animations
 
 static void step_off(int select=0) {
   //turns strips off in steps
@@ -70,13 +71,20 @@ static void step_off(int select=0) {
     }
   }
 }
-
-static void sparkle_v2() {
-  //int num_steps = 40; //#of fade steps off to on back to off over 255 discreet vals/ increments by 5
-  int num_active=0;//
-  int num_limit = 25;
+static void twinkle( byte oldmode ){
   
-  int pin_brightness[(N_LEDS*2)];
+  if (check_state_change(oldmode)) {
+    return;
+  } 
+
+}
+
+static void sparkle_v2(uint32_t c1) {
+  //int num_steps = 40; //#of fade steps off to on back to off over 255 discreet vals/ increments by 5
+  byte num_active = 0;//
+  byte num_limit = 18;
+  
+  byte pin_brightness[(N_LEDS*2)];
   for (int i=0;i<(N_LEDS*2);i++) {
     pin_brightness[i] = 0;
   }  
@@ -90,11 +98,12 @@ static void sparkle_v2() {
     if (num_active<=num_limit) {
       //50% chance to spawn a new light
       if (random(5) >= 0) {
-        while (true) { //start loop to find an led not in use
+        while (true) { 
+          //start loop to find an led not in use
           int R=random(N_LEDS*2);
           if (pin_brightness[R]==0){ //weve found an unused pin
             pin_brightness[R]+=5; //increment brightness slightly
-            pin_color[R]=random(256); //randomly select color from color wheel
+            pin_color[R]=c1; //
             num_active++;//increment active count
             break; //exit while loop.
           }
@@ -144,6 +153,37 @@ static void rainbow_fill(int select=0) {
   }
 }
 
+static void chase(uint32_t c, byte oldmode=MODE) {
+  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
+    if ( !check_state_change(oldmode) ) {
+      setPixelsColors(i, i, c, c); // Draw new pixel
+      setPixelsColors(i-4, i-4, 0, 0); // Erase pixel a few steps back
+      Show();
+      delay(100);
+    } else {
+      setAlltoColor(0);
+      return;
+    }
+  }
+}
+
+
+static void opposite_chase(uint32_t c, byte oldmode=MODE) {
+  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
+    if ( !check_state_change( oldmode ) ){
+      setOppositePixels(i, c, c); // Draw new pixel
+      setOppositePixels(i-4, 0, 0); // Erase pixel a few steps back
+      Show();
+      delay(100);
+    } else {
+      setAlltoColor(0);
+      return;
+    }
+  }
+}
+
+// The following functions are NeoPixel color and brightness helpers 
+
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t Wheel(byte WheelPos) {
@@ -188,40 +228,28 @@ uint32_t Fade_Wheel(byte WheelPos, byte Brightness) {
   }
 }
 
-static void chase(uint32_t c) {
-  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
-      setPixelsColors(i, i, c, c); // Draw new pixel
-      setPixelsColors(i-4, i-4, 0, 0); // Erase pixel a few steps back
-      Show();
-      delay(100);
-  }
-}
-
-
-static void opposite_chase(uint32_t c) {
-  for(uint16_t i=0; i<strip1.numPixels()+4; i++) {
-      setOppositePixels(i, c, c); // Draw new pixel
-      setOppositePixels(i-4, 0, 0); // Erase pixel a few steps back
-      Show();
-      delay(100);
+//operational functions
+boolean check_state_change(byte old_mode){
+  if (MODE != old_mode) {
+    return true;
+  } else {
+    return false;
   }
 }
 
 boolean debounce(int pin){
   boolean state;
-  boolean previousState;
-  previousState = digitalRead( pin );
   for (int i=0; i < debounceDelay; i++) {
     delay(1);
     state = digitalRead( pin ) ;
-    if(state != previousState) {
-      i=0;
-      previousState = state;    
+    if(state != LOW) {
+      return false;  
     }
   }
-  return state;
+  return true;
 }
-void reset() {
+
+void mode_set() {
   if ( debounce( SWITCH ) ) {
     MODE++;
   }
@@ -230,24 +258,18 @@ void reset() {
 void setup() {
   pinMode(SWITCH, INPUT);
   digitalWrite(SWITCH, HIGH);
-  attachInterrupt(0, reset, FALLING);
-  strip1.setBrightness(130);
-  strip2.setBrightness(130);
+  attachInterrupt(0, mode_set, FALLING);
+  strip1.setBrightness(200);
+  strip2.setBrightness(200);
   strip1.begin();
   strip2.begin();
 }
 
 void loop() {
-  //chase(strip1.Color(255, 0, 0)); // Red
-  uint32_t C1 = Wheel(CL1);
-  uint32_t C2 = Wheel(CL2);
-  uint32_t C3 = Wheel(CL3);
-  
-  if (MODE %3 == 0) {
-    chase( Wheel( CL1 ) );
-  } else if (MODE %3 == 1) {
-    opposite_chase( Wheel( CL1 ) );
-  } else {
-    sparkle_v2();
+  //decide which animation to run
+  if (MODE %2 == 0) {
+    chase( strip1.Color( 80, 80, 255 ) );
+  } else if (MODE %2 == 1) {
+    opposite_chase( Wheel( 120 ) );
   }
 }
